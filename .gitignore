@@ -1,0 +1,26 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.env
+*.egg-info/
+
+# --- Données réelles : ne jamais pousser sur GitHub ---
+Layla_Base_Donnees*.xlsx
+logo/
+photos/
+output/
+
+# --- Document interne (organisation, staffing) : hors dépôt ---
+Dossier_Projet 2*.docx
+
+# --- OS / éditeurs ---
+.DS_Store
+Thumbs.db
+.vscode/
+
+# --- Outillage Claude Code ---
+.claude/
