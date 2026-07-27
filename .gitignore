@@ -13,6 +13,7 @@ Layla_Base_Donnees*.xlsx
 logo/
 photos/
 output/
+backups/
 
 # --- Document interne (organisation, staffing) : hors dépôt ---
 Dossier_Projet 2*.docx
