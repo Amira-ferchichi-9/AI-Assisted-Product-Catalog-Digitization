@@ -24,9 +24,14 @@ from pathlib import Path
 SRC_DIR = Path(__file__).resolve().parent / "src"
 sys.path.insert(0, str(SRC_DIR))
 
+import config  # noqa: E402
+from catalog_version_history import (  # noqa: E402
+    construire_nom_fichier,
+    enregistrer_version,
+    obtenir_prochain_numero_version,
+)
 from excel_source import ControlesError, load_clients, load_produits, load_relations, validate_controles  # noqa: E402
 from pptx_builder import build_catalog_for_client  # noqa: E402
-from versioning import next_available_path  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_LOGO_DIR = PROJECT_ROOT / "logo"
@@ -47,6 +52,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--catalogue", type=str, default=None, help="Filtre optionnel sur la colonne 'catalogue' de la feuille Produits (ex. Apéritifs). Par défaut : tous les produits actifs.")
     parser.add_argument("--date", type=str, default=None, help="Date de référence AAAA-MM-JJ pour le calcul des prix négociés (défaut : aujourd'hui).")
     parser.add_argument("--client", type=str, default=None, help="Ne générer que pour ce code_client (défaut : tous les clients actifs).")
+    parser.add_argument(
+        "--raison", type=str, default="Génération automatique (tâche planifiée)",
+        help="Raison enregistrée dans l'historique des versions pour cette exécution.",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Active les logs de niveau DEBUG.")
     return parser.parse_args(argv)
 
@@ -115,20 +124,26 @@ def main(argv: list[str] | None = None) -> int:
     if not args.photos_dir.exists():
         logger.warning("Dossier photos introuvable (%s) — toutes les cartes produit afficheront un encart 'Photo à venir'.", args.photos_dir)
 
+    nom_catalogue = args.catalogue or "Catalogue"
+
     had_errors = False
     total_warnings = 0
     clients_done = 0
 
     for _, client_row in clients_df.iterrows():
         code_client = client_row["code_client"]
+        nom_client = client_row["nom_client"]
         try:
             prs, warnings = build_catalog_for_client(
                 client_row, produits_df, relations_df,
                 args.photos_dir, args.logo_dir, args.layla_logo, on_date,
             )
-            date_str = dt.date.today().strftime("%Y-%m-%d")
-            output_path, _version = next_available_path(args.output_dir, date_str, code_client, "pptx")
+            n_version = obtenir_prochain_numero_version(config.VERSION_HISTORY_PATH, nom_catalogue, client=nom_client)
+            output_path = args.output_dir / construire_nom_fichier(nom_catalogue, nom_client, n_version)
             prs.save(output_path)
+            enregistrer_version(
+                config.VERSION_HISTORY_PATH, nom_catalogue, nom_client, n_version, "dynamique", args.raison
+            )
         except Exception:
             logger.exception("Échec de la génération pour le client '%s'.", code_client)
             had_errors = True

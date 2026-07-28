@@ -17,10 +17,15 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 import config
+from catalog_version_history import (
+    construire_nom_fichier,
+    enregistrer_version,
+    obtenir_historique,
+    obtenir_prochain_numero_version,
+)
 from data_access import load_clients, load_produits
 from pptx_generator import generate_catalog
 from relations_writer import (
-    FileChangedError,
     RelationsWriteError,
     clear_negotiated_price,
     get_negotiated_price,
@@ -176,9 +181,9 @@ selected_client = client_options[selected_label]
 if st.session_state.get("selected_client") != selected_client:
     st.session_state["selected_client"] = selected_client
     st.session_state.pop("price_preview", None)
-st.session_state.setdefault("price_excel_mtime", excel_path.stat().st_mtime)
 
 client_row = clients_df[clients_df["code_client"] == selected_client] if selected_client else None
+selected_client_name = client_row.iloc[0]["nom_client"] if client_row is not None else None
 is_groupe = (
     client_row is None
     or "type_client" not in clients_df.columns
@@ -269,28 +274,16 @@ else:
         if not has_changes:
             st.caption("Aucun changement à confirmer.")
         elif st.button(f"Confirmer et écrire dans {excel_path.name}", type="primary"):
-            expected_mtime = st.session_state.get("price_excel_mtime")
             try:
                 for row in preview_rows:
                     if row["Action"] == "Aucun changement":
                         continue
                     row_code_article = row["code_article"]
                     if row["Action"] == "Supprimer (retour au standard)":
-                        clear_negotiated_price(
-                            excel_path, selected_client, row_code_article, expected_mtime=expected_mtime
-                        )
+                        clear_negotiated_price(excel_path, selected_client, row_code_article)
                     else:
                         new_price = float(row["Nouveau prix"].replace(",", "."))
-                        upsert_negotiated_price(
-                            excel_path, selected_client, row_code_article, new_price,
-                            expected_mtime=expected_mtime,
-                        )
-                    # Chaque écriture ci-dessus modifie le mtime du fichier : il faut le
-                    # relire avant la ligne suivante du même lot, sinon le garde-fou
-                    # anti-concurrence rejette à tort la 2e écriture comme "modifiée entre-temps".
-                    expected_mtime = excel_path.stat().st_mtime
-            except FileChangedError as exc:
-                st.error(str(exc))
+                        upsert_negotiated_price(excel_path, selected_client, row_code_article, new_price)
             except RelationsWriteError as exc:
                 st.error(str(exc))
             else:
@@ -299,7 +292,6 @@ else:
                     "créée dans backups/."
                 )
                 st.session_state.pop("price_preview", None)
-                st.session_state["price_excel_mtime"] = excel_path.stat().st_mtime
 
 st.divider()
 st.markdown('<span class="layla-label">Langue du catalogue</span>', unsafe_allow_html=True)
@@ -314,8 +306,17 @@ if selected_language != "Français":
         "traduites). Le catalogue généré reste en français pour le moment."
     )
 
+raison = st.text_input(
+    "Raison de cette génération (optionnel)",
+    placeholder="ex. Nouveau prix négocié, mise à jour du logo...",
+)
+
 st.write("")
 if st.button("Générer le catalogue", type="primary"):
+    n_version = obtenir_prochain_numero_version(
+        config.VERSION_HISTORY_PATH, config.CATALOGUE_NAME, client=selected_client_name
+    )
+
     with st.spinner("Génération en cours..."):
         try:
             output_path, warnings = generate_catalog(selected_client, excel_path=excel_path)
@@ -323,7 +324,26 @@ if st.button("Générer le catalogue", type="primary"):
             st.error(f"Échec de la génération : {exc}")
             st.stop()
 
-    st.success(f"Catalogue généré : {output_path.name}")
+    # Renomme le fichier produit selon la convention {Catalogue}_{Client}_v{N}_{AAAA-MM-JJ}.pptx
+    # et journalise la version, pour garder un historique de chaque génération.
+    nom_final = construire_nom_fichier(config.CATALOGUE_NAME, selected_client_name, n_version)
+    chemin_final = output_path.with_name(nom_final)
+    # .replace() (et non .rename()) : sous Windows, rename() lève une erreur si la
+    # cible existe déjà (contrairement à Linux) — replace() écrase proprement.
+    output_path.replace(chemin_final)
+    output_path = chemin_final
+
+    type_version = "dynamique" if selected_client_name else "statique"
+    enregistrer_version(
+        config.VERSION_HISTORY_PATH,
+        config.CATALOGUE_NAME,
+        selected_client_name,
+        n_version,
+        type_version,
+        raison or "Génération depuis l'interface Streamlit",
+    )
+
+    st.success(f"Catalogue généré : {output_path.name} (version {n_version})")
 
     if warnings:
         st.warning("Points à vérifier :\n\n" + "\n".join(f"- {w}" for w in warnings))
@@ -334,6 +354,25 @@ if st.button("Générer le catalogue", type="primary"):
             data=f.read(),
             file_name=output_path.name,
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
+
+with st.expander("Historique des versions de ce catalogue"):
+    historique = obtenir_historique(config.VERSION_HISTORY_PATH, config.CATALOGUE_NAME, client=selected_client_name)
+    if not historique:
+        st.caption("Aucune génération enregistrée pour l'instant.")
+    else:
+        st.table(
+            pd.DataFrame(
+                [
+                    {
+                        "Version": e.n_version,
+                        "Heure": e.date[11:16],  # ISO "AAAA-MM-JJTHH:MM:SS" -> "HH:MM"
+                        "Type": e.type,
+                        "Raison": e.raison,
+                    }
+                    for e in historique
+                ]
+            ).set_index("Version")
         )
 
 st.divider()
