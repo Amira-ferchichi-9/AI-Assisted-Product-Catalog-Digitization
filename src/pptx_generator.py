@@ -24,6 +24,7 @@ from data_access import (
     load_produits,
     load_relations,
 )
+from versioning import next_available_path
 
 LOGO_GAP_CM = 0.5
 LOGO_MARGIN_BEFORE_PHOTO_CM = 0.6
@@ -120,9 +121,9 @@ def generate_catalog(
         set_shape_text(shape, format_price(price))
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    suffix = code_client if code_client else "STANDARD"
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_path = output_dir / f"Catalogue_Aperitifs_{suffix}_{timestamp}.pptx"
+    label = code_client if code_client else "STANDARD"
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    output_path, _version = next_available_path(output_dir, date_str, label, "pptx")
     prs.save(output_path)
 
     return output_path, warnings

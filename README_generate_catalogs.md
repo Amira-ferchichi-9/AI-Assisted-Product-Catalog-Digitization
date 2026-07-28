@@ -17,11 +17,16 @@ deck `Layla_Apero_Catalogue_FR.pptx`), ce script construit les slides de zéro
    couple client × produit et que la date du jour est dans la plage
    `date_debut`/`date_fin` (bornes ouvertes si vides) ; sinon le prix
    standard (`Produits.prix_standard_kg`).
-3. **Un PPTX par client** (`{code_client}.pptx`) : page de garde (logo client
-   à côté du logo Layla si `logo_client_fichier` est renseigné, sinon logo
-   Layla seul) puis une page par `gamme` (triée par `ordre_affichage`), avec
-   une carte par produit : photo (ou encart "Photo à venir" si introuvable),
-   nom, description, prix au kg + prix unitaire (déduit de `poids_net_kg`),
+3. **Un PPTX par client**, nommé `AAAA-MM-JJ_Catalogue_[CodeClient]_v[X.Y].pptx`
+   (ex. `2026-07-29_Catalogue_MARRIOTT_v1.0.pptx`) — version calculée
+   automatiquement par client à partir de ce qui existe déjà dans
+   `--output-dir` (mineure incrémentée à chaque régénération le même jour,
+   jamais d'écrasement ; voir `src/versioning.py`, partagé avec
+   `archive_catalogues.py`). Contenu : page de garde (logo client à côté du
+   logo Layla si `logo_client_fichier` est renseigné, sinon logo Layla seul)
+   puis une page par `gamme` (triée par `ordre_affichage`), avec une carte par
+   produit : photo (ou encart "Photo à venir" si introuvable), nom,
+   description, prix au kg + prix unitaire (déduit de `poids_net_kg`),
    allergènes si renseignés. Une gamme avec plus de 6 produits actifs se
    poursuit sur une slide "(suite)".
 4. **Log** clair de chaque étape (clients traités, photos manquantes, etc.),

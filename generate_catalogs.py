@@ -26,6 +26,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from excel_source import ControlesError, load_clients, load_produits, load_relations, validate_controles  # noqa: E402
 from pptx_builder import build_catalog_for_client  # noqa: E402
+from versioning import next_available_path  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_LOGO_DIR = PROJECT_ROOT / "logo"
@@ -125,7 +126,8 @@ def main(argv: list[str] | None = None) -> int:
                 client_row, produits_df, relations_df,
                 args.photos_dir, args.logo_dir, args.layla_logo, on_date,
             )
-            output_path = args.output_dir / f"{code_client}.pptx"
+            date_str = dt.date.today().strftime("%Y-%m-%d")
+            output_path, _version = next_available_path(args.output_dir, date_str, code_client, "pptx")
             prs.save(output_path)
         except Exception:
             logger.exception("Échec de la génération pour le client '%s'.", code_client)

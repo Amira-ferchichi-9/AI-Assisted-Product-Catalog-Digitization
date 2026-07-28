@@ -6,11 +6,14 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Le chemin de la base Excel peut être surchargé par la variable d'environnement
-# LAYLA_EXCEL_PATH, sans toucher au code — utile pour pointer vers un dossier
-# OneDrive synchronisé (ex. C:\Users\<vous>\OneDrive\...\Layla_Base_Donnees.xlsx)
-# une fois celui-ci mis en place, ou vers tout autre emplacement plus tard.
-EXCEL_PATH = Path(os.environ.get("LAYLA_EXCEL_PATH", PROJECT_ROOT / "Layla_Base_Donnees.xlsx"))
+# Le fichier maître vit sur OneDrive (synchronisé localement à ce chemin fixe) :
+# le directeur commercial l'édite dans Excel, et l'app lit toujours sa dernière
+# version enregistrée, sans étape manuelle. Reste surchargeable par la variable
+# d'environnement LAYLA_EXCEL_PATH pour un autre poste/déploiement futur — mais
+# NE PAS compter dessus par défaut : une variable d'environnement ne survit pas
+# à la fermeture du terminal, contrairement à ce chemin en dur.
+DEFAULT_EXCEL_PATH = Path.home() / "OneDrive" / "Layla_Base_Donnees_v1.3_groupes_seuls.xlsx"
+EXCEL_PATH = Path(os.environ.get("LAYLA_EXCEL_PATH", DEFAULT_EXCEL_PATH))
 TEMPLATE_PATH = PROJECT_ROOT / "Layla_Apero_Catalogue_FR.pptx"
 LOGO_DIR = PROJECT_ROOT / "logo"
 OUTPUT_DIR = PROJECT_ROOT / "output"
