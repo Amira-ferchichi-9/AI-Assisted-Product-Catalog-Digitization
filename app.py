@@ -285,6 +285,10 @@ else:
                             excel_path, selected_client, row_code_article, new_price,
                             expected_mtime=expected_mtime,
                         )
+                    # Chaque écriture ci-dessus modifie le mtime du fichier : il faut le
+                    # relire avant la ligne suivante du même lot, sinon le garde-fou
+                    # anti-concurrence rejette à tort la 2e écriture comme "modifiée entre-temps".
+                    expected_mtime = excel_path.stat().st_mtime
             except FileChangedError as exc:
                 st.error(str(exc))
             except RelationsWriteError as exc:
