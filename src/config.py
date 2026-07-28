@@ -19,3 +19,8 @@ PRICE_MAP_PATH = PROJECT_ROOT / "config" / "gamme_price_map.json"
 SAMPLE_EXCEL_PATH = PROJECT_ROOT / "data" / "sample_produits.xlsx"
 
 COVER_SLIDE_INDEX = 0
+
+# Nom de catalogue utilisé pour la convention de nommage et le journal de versions
+# (voir catalog_version_history.py). Un seul catalogue existe pour l'instant.
+CATALOGUE_NAME = "Aperitifs"
+VERSION_HISTORY_PATH = PROJECT_ROOT / "historique_versions.csv"
