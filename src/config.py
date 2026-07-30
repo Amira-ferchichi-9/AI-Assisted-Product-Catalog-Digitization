@@ -20,7 +20,8 @@ SAMPLE_EXCEL_PATH = PROJECT_ROOT / "data" / "sample_produits.xlsx"
 
 COVER_SLIDE_INDEX = 0
 
-# Nom de catalogue utilisé pour la convention de nommage et le journal de versions
+# Nom de catalogue utilisé pour la convention de nommage et les journaux
 # (voir catalog_version_history.py). Un seul catalogue existe pour l'instant.
 CATALOGUE_NAME = "Aperitifs"
 VERSION_HISTORY_PATH = PROJECT_ROOT / "historique_versions.csv"
+DOWNLOAD_HISTORY_PATH = PROJECT_ROOT / "historique_telechargements.csv"
