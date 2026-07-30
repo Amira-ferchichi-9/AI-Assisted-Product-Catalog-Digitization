@@ -4,20 +4,20 @@
     {
       "slide_index": 3,
       "shape_id": 7,
-      "family_label": "Perle croustillante aux éclats d'amande",
-      "code_article": "PC-AMANDE-500"
+      "family_label": "Knusperkugel Mandel",
+      "code_article": "98B-B04-002"
     },
     {
       "slide_index": 4,
       "shape_id": 7,
-      "family_label": "Perle croustillante aux éclats de cacahuète",
-      "code_article": "PC-CACAHUETE-500"
+      "family_label": "Knusperkugel Erdnuss",
+      "code_article": "98B-B04-009"
     },
     {
       "slide_index": 5,
       "shape_id": 7,
-      "family_label": "Perle croustillante aux éclats de sésame ou de graines de courge",
-      "code_article": "PC-SESAME-COURGE-500"
+      "family_label": "Knusperkugel Sesam & Kurbiskern",
+      "code_article": "98B-B04-012"
     }
   ]
 }

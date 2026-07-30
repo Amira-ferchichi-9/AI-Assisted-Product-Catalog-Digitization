@@ -24,6 +24,8 @@ from pathlib import Path
 SRC_DIR = Path(__file__).resolve().parent / "src"
 sys.path.insert(0, str(SRC_DIR))
 
+import config  # noqa: E402
+from catalog_version_history import enregistrer_telechargement, obtenir_version_courante  # noqa: E402
 from excel_source import ControlesError, load_clients, load_produits, load_relations, validate_controles  # noqa: E402
 from pptx_builder import build_catalog_for_client  # noqa: E402
 
@@ -46,6 +48,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--catalogue", type=str, default=None, help="Filtre optionnel sur la colonne 'catalogue' de la feuille Produits (ex. Apéritifs). Par défaut : tous les produits actifs.")
     parser.add_argument("--date", type=str, default=None, help="Date de référence AAAA-MM-JJ pour le calcul des prix négociés (défaut : aujourd'hui).")
     parser.add_argument("--client", type=str, default=None, help="Ne générer que pour ce code_client (défaut : tous les clients actifs).")
+    parser.add_argument(
+        "--raison", type=str, default="Génération automatique (tâche planifiée)",
+        help="Raison enregistrée dans l'historique de téléchargement pour cette exécution.",
+    )
+    parser.add_argument("--pays", type=str, default="", help="Pays enregistré dans l'historique de téléchargement.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Active les logs de niveau DEBUG.")
     return parser.parse_args(argv)
 
@@ -114,19 +121,41 @@ def main(argv: list[str] | None = None) -> int:
     if not args.photos_dir.exists():
         logger.warning("Dossier photos introuvable (%s) — toutes les cartes produit afficheront un encart 'Photo à venir'.", args.photos_dir)
 
+    nom_catalogue = args.catalogue or "Catalogue"
+
+    version_courante = obtenir_version_courante(config.VERSION_HISTORY_PATH)
+    if version_courante is None:
+        logger.error(
+            "Aucune version n'est encore enregistrée dans l'historique de versions — "
+            "enregistre d'abord un changement de version (voir catalog_version_history.py) "
+            "avant de générer des catalogues."
+        )
+        return 1
+
     had_errors = False
     total_warnings = 0
     clients_done = 0
 
     for _, client_row in clients_df.iterrows():
         code_client = client_row["code_client"]
+        nom_client = client_row["nom_client"]
         try:
             prs, warnings = build_catalog_for_client(
                 client_row, produits_df, relations_df,
                 args.photos_dir, args.logo_dir, args.layla_logo, on_date,
             )
-            output_path = args.output_dir / f"{code_client}.pptx"
+            nom_fichier = f"{nom_catalogue}_{nom_client}_v{version_courante}_{dt.date.today().isoformat()}.pptx"
+            output_path = args.output_dir / nom_fichier
             prs.save(output_path)
+            enregistrer_telechargement(
+                config.DOWNLOAD_HISTORY_PATH,
+                version=version_courante,
+                groupe_standard=nom_client,
+                raison=args.raison,
+                langue=lang or "",
+                pays=args.pays,
+                nom_fichier=output_path.name,
+            )
         except Exception:
             logger.exception("Échec de la génération pour le client '%s'.", code_client)
             had_errors = True
