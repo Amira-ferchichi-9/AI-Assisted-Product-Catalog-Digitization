@@ -15,6 +15,7 @@ photos/
 output/
 backups/
 historique_versions.csv
+historique_telechargements.csv
 
 # --- Document interne (organisation, staffing) : hors dépôt ---
 Dossier_Projet 2*.docx

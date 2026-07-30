@@ -7,7 +7,7 @@ Lancer avec : streamlit run app.py
 """
 
 import base64
-import json
+import datetime as dt
 import sys
 from pathlib import Path
 
@@ -18,19 +18,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 import config
 from catalog_version_history import (
-    construire_nom_fichier,
+    calculer_prochaine_version,
+    enregistrer_telechargement,
     enregistrer_version,
-    obtenir_historique,
-    obtenir_prochain_numero_version,
+    obtenir_historique_telechargements,
+    obtenir_historique_versions,
+    obtenir_version_courante,
 )
-from data_access import load_clients, load_produits
+from data_access import load_clients
 from pptx_generator import generate_catalog
-from relations_writer import (
-    RelationsWriteError,
-    clear_negotiated_price,
-    get_negotiated_price,
-    upsert_negotiated_price,
-)
 
 LOGO_PATH = Path(__file__).resolve().parent / "src" / "assets" / "layla_logo.png"
 
@@ -178,123 +174,38 @@ st.markdown('<span class="layla-label">Client</span>', unsafe_allow_html=True)
 selected_label = st.selectbox("Client", options=list(client_options.keys()), label_visibility="collapsed")
 selected_client = client_options[selected_label]
 
-if st.session_state.get("selected_client") != selected_client:
-    st.session_state["selected_client"] = selected_client
-    st.session_state.pop("price_preview", None)
-
 client_row = clients_df[clients_df["code_client"] == selected_client] if selected_client else None
 selected_client_name = client_row.iloc[0]["nom_client"] if client_row is not None else None
-is_groupe = (
-    client_row is None
-    or "type_client" not in clients_df.columns
-    or client_row.iloc[0].get("type_client") == "Groupe"
-)
 
 st.divider()
-st.markdown('<span class="layla-label">Prix négociés</span>', unsafe_allow_html=True)
+st.markdown('<span class="layla-label">Version du catalogue</span>', unsafe_allow_html=True)
+version_courante = obtenir_version_courante(config.VERSION_HISTORY_PATH)
+st.write(f"Version actuelle : **{version_courante or '— aucune —'}**")
 
-if selected_client is None:
-    st.caption("Sélectionnez un client ci-dessus pour gérer ses prix négociés.")
-elif not is_groupe:
-    st.info(
-        "La négociation se fait uniquement au niveau du groupe/enseigne, jamais hôtel par "
-        "hôtel — ce client n'est pas éligible."
+with st.expander("Enregistrer un changement de version"):
+    st.caption(
+        "À utiliser quand un vrai changement a eu lieu : nouveaux articles, photos/descriptions "
+        "optimisées, logo modifié (contenu), ou révision annuelle des prix (prix). Ne pas utiliser "
+        "pour une simple génération/téléchargement."
     )
-else:
-    produits_df = load_produits(excel_path)
-    price_targets = json.loads(config.PRICE_MAP_PATH.read_text(encoding="utf-8"))["targets"]
-
-    form_values = {}
-    for target in price_targets:
-        code_article = target["code_article"]
-        produit_row = produits_df[produits_df["code_article"] == code_article]
-        standard_price = float(produit_row.iloc[0]["prix_standard_kg"]) if not produit_row.empty else None
-        current_negotiated = get_negotiated_price(excel_path, selected_client, code_article)
-
-        st.markdown(f"**{target['family_label']}** &nbsp;·&nbsp; *{code_article}*")
-        col_standard, col_toggle, col_value = st.columns([1, 1, 2])
-        with col_standard:
-            st.caption("Prix standard")
-            st.write(f"{standard_price:.2f} TND/KG" if standard_price is not None else "—")
-        with col_toggle:
-            negotiated_checked = st.checkbox(
-                "Prix négocié",
-                value=current_negotiated is not None,
-                key=f"negotiated_toggle_{selected_client}_{code_article}",
-            )
-        with col_value:
-            negotiated_value = st.number_input(
-                "Prix négocié (TND/KG)",
-                min_value=0.0,
-                step=0.10,
-                value=current_negotiated if current_negotiated is not None else (standard_price or 0.0),
-                key=f"negotiated_value_{selected_client}_{code_article}",
-                disabled=not negotiated_checked,
-                label_visibility="collapsed",
-            )
-        form_values[code_article] = {
-            "family_label": target["family_label"],
-            "checked": negotiated_checked,
-            "value": negotiated_value,
-            "current": current_negotiated,
-        }
-        st.write("")
-
-    if st.button("Prévisualiser les changements"):
-        preview_rows = []
-        for code_article, v in form_values.items():
-            current = v["current"]
-            if v["checked"]:
-                new_value = round(float(v["value"]), 2)
-                if current is not None and abs(current - new_value) < 0.005:
-                    action = "Aucun changement"
-                elif current is None:
-                    action = "Créer"
-                else:
-                    action = "Mettre à jour"
-            else:
-                new_value = None
-                action = "Supprimer (retour au standard)" if current is not None else "Aucun changement"
-
-            preview_rows.append(
-                {
-                    "Produit": v["family_label"],
-                    "code_article": code_article,
-                    "Prix actuel": f"{current:.2f}" if current is not None else "Standard",
-                    "Nouveau prix": f"{new_value:.2f}" if new_value is not None else "Standard",
-                    "Action": action,
-                }
-            )
-        st.session_state["price_preview"] = preview_rows
-
-    preview_rows = st.session_state.get("price_preview")
-    if preview_rows:
-        st.table(pd.DataFrame(preview_rows).drop(columns=["code_article"]).set_index("Produit"))
-        has_changes = any(r["Action"] != "Aucun changement" for r in preview_rows)
-        if not has_changes:
-            st.caption("Aucun changement à confirmer.")
-        elif st.button(f"Confirmer et écrire dans {excel_path.name}", type="primary"):
-            try:
-                for row in preview_rows:
-                    if row["Action"] == "Aucun changement":
-                        continue
-                    row_code_article = row["code_article"]
-                    if row["Action"] == "Supprimer (retour au standard)":
-                        clear_negotiated_price(excel_path, selected_client, row_code_article)
-                    else:
-                        new_price = float(row["Nouveau prix"].replace(",", "."))
-                        upsert_negotiated_price(excel_path, selected_client, row_code_article, new_price)
-            except RelationsWriteError as exc:
-                st.error(str(exc))
-            else:
-                st.success(
-                    f"Prix mis à jour pour {selected_label}. Une sauvegarde du fichier a été "
-                    "créée dans backups/."
-                )
-                st.session_state.pop("price_preview", None)
+    type_changement = st.radio(
+        "Type de changement",
+        options=["contenu", "prix"],
+        format_func=lambda t: "Contenu (articles, photos, logo...)" if t == "contenu" else "Prix (révision annuelle)",
+        horizontal=True,
+    )
+    raison_version = st.text_input("Raison du changement de version (obligatoire)")
+    if st.button("Enregistrer le changement de version"):
+        if not raison_version.strip():
+            st.error("La raison du changement de version est obligatoire.")
+        else:
+            nouvelle_version = calculer_prochaine_version(config.VERSION_HISTORY_PATH, type_changement)
+            enregistrer_version(config.VERSION_HISTORY_PATH, nouvelle_version, raison_version)
+            st.success(f"Nouvelle version enregistrée : {nouvelle_version}")
+            st.rerun()
 
 st.divider()
-st.markdown('<span class="layla-label">Langue du catalogue</span>', unsafe_allow_html=True)
+st.markdown('<span class="layla-label">Langue</span>', unsafe_allow_html=True)
 selected_language = st.selectbox(
     "Langue",
     options=["Français", "Deutsch (bientôt disponible)", "English (bientôt disponible)"],
@@ -306,71 +217,92 @@ if selected_language != "Français":
         "traduites). Le catalogue généré reste en français pour le moment."
     )
 
+st.markdown('<span class="layla-label">Raison de cette génération (obligatoire)</span>', unsafe_allow_html=True)
 raison = st.text_input(
-    "Raison de cette génération (optionnel)",
-    placeholder="ex. Nouveau prix négocié, mise à jour du logo...",
+    "Raison de cette génération (obligatoire)",
+    label_visibility="collapsed",
+    placeholder="ex. Envoi au directeur des achats Marriott",
 )
 
 st.write("")
 if st.button("Générer le catalogue", type="primary"):
-    n_version = obtenir_prochain_numero_version(
-        config.VERSION_HISTORY_PATH, config.CATALOGUE_NAME, client=selected_client_name
-    )
+    if not raison.strip():
+        st.error("La raison de cette génération est obligatoire.")
+    elif version_courante is None:
+        st.error(
+            "Aucune version n'est encore enregistrée. Enregistre d'abord un changement de "
+            "version ci-dessus avant de générer un catalogue."
+        )
+    else:
+        with st.spinner("Génération en cours..."):
+            try:
+                output_path, warnings = generate_catalog(selected_client, excel_path=excel_path)
+            except Exception as exc:
+                st.error(f"Échec de la génération : {exc}")
+                st.stop()
 
-    with st.spinner("Génération en cours..."):
-        try:
-            output_path, warnings = generate_catalog(selected_client, excel_path=excel_path)
-        except Exception as exc:
-            st.error(f"Échec de la génération : {exc}")
-            st.stop()
+        # Renomme le fichier produit selon la convention {Catalogue}_{Client}_v{Version}_{AAAA-MM-JJ}.pptx.
+        groupe_standard = selected_client_name or "Standard"
+        nom_final = f"{config.CATALOGUE_NAME}_{groupe_standard}_v{version_courante}_{dt.date.today().isoformat()}.pptx"
+        chemin_final = output_path.with_name(nom_final)
+        # .replace() (et non .rename()) : sous Windows, rename() lève une erreur si la
+        # cible existe déjà (contrairement à Linux) — replace() écrase proprement.
+        output_path.replace(chemin_final)
+        output_path = chemin_final
 
-    # Renomme le fichier produit selon la convention {Catalogue}_{Client}_v{N}_{AAAA-MM-JJ}.pptx
-    # et journalise la version, pour garder un historique de chaque génération.
-    nom_final = construire_nom_fichier(config.CATALOGUE_NAME, selected_client_name, n_version)
-    chemin_final = output_path.with_name(nom_final)
-    # .replace() (et non .rename()) : sous Windows, rename() lève une erreur si la
-    # cible existe déjà (contrairement à Linux) — replace() écrase proprement.
-    output_path.replace(chemin_final)
-    output_path = chemin_final
-
-    type_version = "dynamique" if selected_client_name else "statique"
-    enregistrer_version(
-        config.VERSION_HISTORY_PATH,
-        config.CATALOGUE_NAME,
-        selected_client_name,
-        n_version,
-        type_version,
-        raison or "Génération depuis l'interface Streamlit",
-    )
-
-    st.success(f"Catalogue généré : {output_path.name} (version {n_version})")
-
-    if warnings:
-        st.warning("Points à vérifier :\n\n" + "\n".join(f"- {w}" for w in warnings))
-
-    with open(output_path, "rb") as f:
-        st.download_button(
-            "Télécharger le fichier PPTX",
-            data=f.read(),
-            file_name=output_path.name,
-            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        enregistrer_telechargement(
+            config.DOWNLOAD_HISTORY_PATH,
+            version=version_courante,
+            groupe_standard=groupe_standard,
+            raison=raison,
+            langue=selected_language,
+            pays="",
+            nom_fichier=output_path.name,
         )
 
-with st.expander("Historique des versions de ce catalogue"):
-    historique = obtenir_historique(config.VERSION_HISTORY_PATH, config.CATALOGUE_NAME, client=selected_client_name)
-    if not historique:
-        st.caption("Aucune génération enregistrée pour l'instant.")
+        st.success(f"Catalogue généré : {output_path.name} (version {version_courante})")
+
+        if warnings:
+            st.warning("Points à vérifier :\n\n" + "\n".join(f"- {w}" for w in warnings))
+
+        with open(output_path, "rb") as f:
+            st.download_button(
+                "Télécharger le fichier PPTX",
+                data=f.read(),
+                file_name=output_path.name,
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+
+with st.expander("Historique de versions"):
+    historique_versions = obtenir_historique_versions(config.VERSION_HISTORY_PATH)
+    if not historique_versions:
+        st.caption("Aucune version enregistrée pour l'instant.")
+    else:
+        st.table(
+            pd.DataFrame(
+                [{"Version": e.numero_version, "Date": e.date, "Raison": e.raison} for e in historique_versions]
+            ).set_index("Version")
+        )
+
+with st.expander("Historique de téléchargement"):
+    historique_telechargements = obtenir_historique_telechargements(config.DOWNLOAD_HISTORY_PATH)
+    if not historique_telechargements:
+        st.caption("Aucun téléchargement enregistré pour l'instant.")
     else:
         st.table(
             pd.DataFrame(
                 [
                     {
-                        "Version": e.n_version,
-                        "Heure": e.date[11:16],  # ISO "AAAA-MM-JJTHH:MM:SS" -> "HH:MM"
-                        "Type": e.type,
+                        "Version": e.version,
+                        "Groupe/Standard": e.groupe_standard,
                         "Raison": e.raison,
+                        "Langue": e.langue,
+                        "Pays": e.pays,
+                        "Date": e.date[:10],
+                        "Heure": e.date[11:16],
+                        "Fichier": e.nom_fichier,
                     }
-                    for e in historique
+                    for e in historique_telechargements
                 ]
             ).set_index("Version")
         )
