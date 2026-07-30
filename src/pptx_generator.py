@@ -14,7 +14,6 @@ from pathlib import Path
 
 from pptx import Presentation
 from pptx.util import Emu
-from PIL import Image
 
 import config
 from data_access import (
@@ -24,10 +23,12 @@ from data_access import (
     load_produits,
     load_relations,
 )
+from image_layout import fit_and_center
 from versioning import next_available_path
 
-LOGO_GAP_CM = 0.5
+LOGO_GAP_CM = 1.0
 LOGO_MARGIN_BEFORE_PHOTO_CM = 0.6
+LOGO_MAX_WIDTH_CM = 5.0
 
 
 def _cm_to_emu(value_cm: float) -> int:
@@ -51,23 +52,20 @@ def set_shape_text(shape, new_text: str) -> None:
 
 
 def add_client_logo(slide, layla_shape, photo_left_emu: int, logo_path: Path):
-    with Image.open(logo_path) as img:
-        width_px, height_px = img.size
-    aspect_ratio = width_px / height_px
-
+    """Insert the partner logo into a fixed placeholder box anchored to the
+    right of the Layla logo (same top, same height) and left of the cover
+    photo, scaling it to fit without distortion and centering it in the box —
+    so logos of any resolution/aspect ratio land at the same visual size and
+    position (matches the Marriott Tunis placement this box was sized from)."""
     gap = _cm_to_emu(LOGO_GAP_CM)
     margin_before_photo = _cm_to_emu(LOGO_MARGIN_BEFORE_PHOTO_CM)
 
-    height = layla_shape.height
-    width = int(height * aspect_ratio)
-    left = layla_shape.left + layla_shape.width + gap
+    box_left = layla_shape.left + layla_shape.width + gap
+    box_top = layla_shape.top
+    box_width = min(photo_left_emu - margin_before_photo - box_left, _cm_to_emu(LOGO_MAX_WIDTH_CM))
+    box_height = layla_shape.height
 
-    max_width = photo_left_emu - margin_before_photo - left
-    if width > max_width:
-        width = max_width
-        height = int(width / aspect_ratio)
-
-    top = layla_shape.top + (layla_shape.height - height) // 2
+    left, top, width, height = fit_and_center(logo_path, box_left, box_top, box_width, box_height, h_align="left")
     slide.shapes.add_picture(str(logo_path), left, top, width=Emu(width), height=Emu(height))
 
 

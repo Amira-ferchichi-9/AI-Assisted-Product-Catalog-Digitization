@@ -25,6 +25,7 @@ from pptx.enum.text import PP_ALIGN
 from pptx.util import Cm, Emu, Pt
 
 from excel_source import PriceResult, compute_final_price
+from image_layout import fit_and_center
 
 logger = logging.getLogger("layla_catalog")
 
@@ -133,16 +134,12 @@ def _add_photo_or_placeholder(slide, photo_fichier, photos_dir: Path, left, top,
     _set_run(p, "Photo à venir", FONT_SANS, 8, GREY, italic=True)
 
 
-# Réglages ponctuels pour des logos clients dont le rendu automatique (hauteur
-# fixe + largeur déduite du ratio de l'image) ne convient pas tel quel :
-# - echelle : multiplie la hauteur calculée avant d'en déduire la largeur
-#   (ex. ASTORE a un logo très large/bas qui saturait le plafond de largeur).
-# - decalage_horizontal_cm : espace additionnel entre le logo Layla et celui
-#   du client (ex. MARRIOTT collait trop au logo Layla).
-LOGO_OVERRIDES: dict[str, dict[str, float]] = {
-    "MARRIOTT": {"decalage_horizontal_cm": 2.0},
-    "ASTORE": {"echelle": 0.5},
-}
+# Boîte de destination fixe pour le logo partenaire, à droite du logo Layla :
+# même sommet et même hauteur que le logo Layla, largeur plafonnée. Le logo
+# est mis à l'échelle (sans déformation) pour tenir dans cette boîte puis
+# centré dedans, quelles que soient les dimensions/le ratio du fichier source.
+PARTNER_LOGO_MAX_WIDTH = Cm(4.6)
+PARTNER_LOGO_GAP = Cm(1.0)
 
 
 def add_cover_slide(prs: Presentation, client_row: pd.Series, logo_dir: Path, layla_logo_path: Path, generation_date: dt.date, warnings: list[str]) -> None:
@@ -165,20 +162,10 @@ def add_cover_slide(prs: Presentation, client_row: pd.Series, logo_dir: Path, la
     if logo_filename and not pd.isna(logo_filename) and str(logo_filename).strip():
         client_logo_path = logo_dir / str(logo_filename).strip()
         if client_logo_path.exists():
-            overrides = LOGO_OVERRIDES.get(str(client_row.get("code_client", "")), {})
-            with Image.open(client_logo_path) as img:
-                aspect = img.size[0] / img.size[1]
-            gap = Cm(0.5) + Cm(overrides.get("decalage_horizontal_cm", 0.0))
-            max_width = Cm(10.0)
-            height_cible = int(logo_height * overrides.get("echelle", 1.0))
-            width = int(height_cible * aspect)
-            if width > max_width:
-                width = max_width
-                height = int(width / aspect)
-            else:
-                height = height_cible
-            client_left = layla_left + layla_width + gap
-            client_top = logo_top + (logo_height - height) // 2
+            box_left = layla_left + layla_width + PARTNER_LOGO_GAP
+            client_left, client_top, width, height = fit_and_center(
+                client_logo_path, box_left, logo_top, PARTNER_LOGO_MAX_WIDTH, logo_height, h_align="left"
+            )
             slide.shapes.add_picture(str(client_logo_path), client_left, client_top, width=width, height=height)
         else:
             warnings.append(f"Logo client introuvable dans /logo : {logo_filename}")
