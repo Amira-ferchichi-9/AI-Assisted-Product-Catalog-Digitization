@@ -141,6 +141,12 @@ def _add_photo_or_placeholder(slide, photo_fichier, photos_dir: Path, left, top,
 PARTNER_LOGO_MAX_WIDTH = Cm(4.6)
 PARTNER_LOGO_GAP = Cm(1.0)
 
+# Décalage horizontal additionnel pour certains logos client, par code_client
+# (ex. MARRIOTT : demandé pour l'éloigner un peu plus du logo Layla).
+LOGO_EXTRA_GAP_CM: dict[str, float] = {
+    "MARRIOTT": 0.6,
+}
+
 
 def add_cover_slide(prs: Presentation, client_row: pd.Series, logo_dir: Path, layla_logo_path: Path, generation_date: dt.date, warnings: list[str]) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank layout
@@ -162,7 +168,8 @@ def add_cover_slide(prs: Presentation, client_row: pd.Series, logo_dir: Path, la
     if logo_filename and not pd.isna(logo_filename) and str(logo_filename).strip():
         client_logo_path = logo_dir / str(logo_filename).strip()
         if client_logo_path.exists():
-            box_left = layla_left + layla_width + PARTNER_LOGO_GAP
+            extra_gap = Cm(LOGO_EXTRA_GAP_CM.get(str(client_row.get("code_client", "")).strip().upper(), 0.0))
+            box_left = layla_left + layla_width + PARTNER_LOGO_GAP + extra_gap
             client_left, client_top, width, height = fit_and_center(
                 client_logo_path, box_left, logo_top, PARTNER_LOGO_MAX_WIDTH, logo_height, h_align="left"
             )

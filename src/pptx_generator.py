@@ -30,6 +30,12 @@ LOGO_GAP_CM = 1.0
 LOGO_MARGIN_BEFORE_PHOTO_CM = 0.6
 LOGO_MAX_WIDTH_CM = 5.0
 
+# Décalage horizontal additionnel pour certains logos client, par code_client
+# (ex. MARRIOTT : demandé pour l'éloigner un peu plus du logo Layla).
+LOGO_EXTRA_GAP_CM: dict[str, float] = {
+    "MARRIOTT": 0.6,
+}
+
 
 def _cm_to_emu(value_cm: float) -> int:
     return int(value_cm * 360000)
@@ -51,13 +57,14 @@ def set_shape_text(shape, new_text: str) -> None:
     run.text = new_text
 
 
-def add_client_logo(slide, layla_shape, photo_left_emu: int, logo_path: Path):
+def add_client_logo(slide, layla_shape, photo_left_emu: int, logo_path: Path, code_client: str | None = None):
     """Insert the partner logo into a fixed placeholder box anchored to the
     right of the Layla logo (same top, same height) and left of the cover
     photo, scaling it to fit without distortion and centering it in the box —
     so logos of any resolution/aspect ratio land at the same visual size and
     position (matches the Marriott Tunis placement this box was sized from)."""
-    gap = _cm_to_emu(LOGO_GAP_CM)
+    extra_gap = LOGO_EXTRA_GAP_CM.get((code_client or "").strip().upper(), 0.0)
+    gap = _cm_to_emu(LOGO_GAP_CM + extra_gap)
     margin_before_photo = _cm_to_emu(LOGO_MARGIN_BEFORE_PHOTO_CM)
 
     box_left = layla_shape.left + layla_shape.width + gap
@@ -95,7 +102,7 @@ def generate_catalog(
                 layla_shape = find_shape(cover, shape_id=3)
                 photo_shape = find_shape(cover, shape_id=9)
                 if layla_shape is not None and photo_shape is not None:
-                    add_client_logo(cover, layla_shape, photo_shape.left, logo_path)
+                    add_client_logo(cover, layla_shape, photo_shape.left, logo_path, code_client)
                 else:
                     warnings.append("Repères de mise en page introuvables sur la couverture : logo client non inséré.")
             else:
