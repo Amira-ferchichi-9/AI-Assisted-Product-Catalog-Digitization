@@ -42,6 +42,30 @@ def load_relations(excel_path: Path) -> pd.DataFrame:
     return df
 
 
+GROUPE_COLUMN = "Catalogue/ Groupe"
+ASTORE_CODE_CLIENT = "ASTORE"
+
+
+def _select_produit_row(produits_df: pd.DataFrame, code_article: str, code_client: str | None) -> pd.Series | None:
+    """Choisit la bonne ligne Produits pour ce code_article quand plusieurs lignes
+    existent (une par variante de catalogue/groupe, ex. "Deutschland" standard vs
+    "ASTORE Deutschland") : la ligne du groupe du client s'il en fait partie,
+    sinon la ligne standard (hors groupe)."""
+    matches = produits_df[produits_df["code_article"] == code_article]
+    if matches.empty:
+        return None
+    if GROUPE_COLUMN in matches.columns and len(matches) > 1:
+        est_astore = (code_client or "").strip().upper() == ASTORE_CODE_CLIENT
+        groupe = matches[GROUPE_COLUMN].astype(str).str.upper()
+        astore_rows = matches[groupe.str.contains(ASTORE_CODE_CLIENT)]
+        standard_rows = matches[~groupe.str.contains(ASTORE_CODE_CLIENT)]
+        if est_astore and not astore_rows.empty:
+            return astore_rows.iloc[0]
+        if not est_astore and not standard_rows.empty:
+            return standard_rows.iloc[0]
+    return matches.iloc[0]
+
+
 def get_price(
     code_article: str,
     code_client: str | None,
@@ -57,10 +81,10 @@ def get_price(
         if not match.empty:
             return float(match.iloc[0]["prix_negocie_kg"]), True
 
-    produit = produits_df[produits_df["code_article"] == code_article]
-    if produit.empty:
+    produit = _select_produit_row(produits_df, code_article, code_client)
+    if produit is None:
         return None, False
-    return float(produit.iloc[0]["prix_standard_kg"]), False
+    return float(produit["prix_standard_kg"]), False
 
 
 def get_client_logo_filename(code_client: str, clients_df: pd.DataFrame) -> str | None:
